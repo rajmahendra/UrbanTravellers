@@ -16,20 +16,15 @@
 package in.jugchennai.urbantravellers.websocket;
 
 import in.jugchennai.urbantravellers.game.GameBoard;
-import in.jugchennai.urbantravellers.game.GameBoardConfig;
+import in.jugchennai.urbantravellers.game.GameBoardFactory;
 import in.jugchennai.urbantravellers.game.GameCache;
 import in.jugchennai.urbantravellers.game.Player;
 import java.io.IOException;
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.Set;
 import javax.websocket.EncodeException;
 import javax.websocket.EndpointFactory;
 import javax.websocket.Session;
-import javax.websocket.WebSocketClose;
 import javax.websocket.WebSocketEndpoint;
 import javax.websocket.WebSocketMessage;
-import javax.websocket.WebSocketOpen;
 import org.apache.log4j.Logger;
 import org.codehaus.jettison.json.JSONException;
 import org.codehaus.jettison.json.JSONObject;
@@ -43,42 +38,37 @@ import org.codehaus.jettison.json.JSONObject;
 @WebSocketEndpoint(value = "/UTGameSocket",
 encoders = {DataEncoder.class},
 decoders = {DataDecoder.class})
-public class GameBoardSocket {
+public class GameBoardSocket extends UTSocket {
 
     private static Logger logger = Logger.getLogger(GameBoardSocket.class);
     // the getInstance method does some bootstrap activities
-    private static final GameCache cache = GameCache.getInstance();
-    private Set<Session> peers = Collections.synchronizedSet(new HashSet());
-
-    static {
-        GameBoardConfig boardConfig = new GameBoardConfig(50, 2, 6, 24, 44);
-        try {
-            cache.addBoard(GameCache.GAME_ID, new GameBoard(boardConfig));
-            GameBoard board = cache.getBoard(GameCache.GAME_ID);
-            board.addPlayerToBoard(new Player("Pras"));
-            board.addPlayerToBoard(new Player("Raj"));
-            board.addPlayerToBoard(new Player("Shiv"));
-        } catch (Exception ex) {
-            logger.error("exception while configuring game " + ex);
-        }
-    }
 
     /**
+     * the following block of code might be moved to a JSF handler and it has to
+     * be removed from here
      *
-     * @param peer
-     * @throws Exception
+     * @Deprecated
+     *
+     * static { try { // replace the GameCache.GAME_ID with id obtained from DB
+     * cache.addBoard(GameCache.GAME_ID,
+     * GameBoardFactory.createGameBoard("brandNewGame", 50, 2, 6)); GameBoard
+     * board = cache.getBoard(GameCache.GAME_ID);
+     *
+     * // except the following lines board.addPlayerToBoard(new Player("Pras"));
+     * board.addPlayerToBoard(new Player("Raj")); board.addPlayerToBoard(new
+     * Player("Shiv"));
+     *
+     * } catch (Exception ex) { logger.error("exception while configuring game "
+     * + ex); } }
+     *
      */
-    @WebSocketOpen
+    @Override
     public void onOpen(Session peer) throws Exception {
         logger.info("added player to session ");
         peers.add(peer);
     }
 
-    /**
-     *
-     * @param peer
-     */
-    @WebSocketClose
+    @Override
     public void onClose(Session peer) {
         logger.info("removing player from session");
         peers.remove(peer);
@@ -100,7 +90,7 @@ public class GameBoardSocket {
             String playerName = gd.getJson().getString("playerName");
             String diceValue = gd.getJson().getString("diceValue");
 
-            GameBoard board = cache.getBoard(GameCache.GAME_ID);
+            GameBoard board = cache.getBoard();
             Player player = board.movePlayerPosition(playerName,
                     Integer.parseInt(diceValue));
             GameData gamedata = new GameData();
@@ -116,6 +106,25 @@ public class GameBoardSocket {
             logger.error("json exception has occured" + ex.getMessage());
         } catch (Exception ex) {
             logger.error(ex.getMessage());
+        }
+    }
+
+    /**
+     * send signal change msg to connected browsers
+     *
+     * @param name
+     * @throws JSONException
+     * @throws IOException
+     * @throws EncodeException
+     */
+    @WebSocketMessage
+    public void sendSignalChange(String name) throws
+            JSONException, IOException, EncodeException {
+        GameData gamedata = new GameData();
+        JSONObject json = new JSONObject();
+        json.put("notification", name);
+        for (Session currPeer : peers) {
+            currPeer.getRemote().sendObject(gamedata);
         }
     }
 }
